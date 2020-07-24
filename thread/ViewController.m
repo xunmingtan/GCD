@@ -9,6 +9,14 @@
 #import "ViewController.h"
 
 @interface ViewController ()
+{
+    dispatch_semaphore_t _semaphoreLocks;
+}
+@property(assign,nonatomic)NSInteger tickets;
+@property(assign,nonatomic)NSInteger ticketSurplusCount;
+
+
+
 
 @end
 
@@ -70,9 +78,99 @@
 //    [NSThread detachNewThreadSelector:@selector(syncMain) toTarget:self withObject:nil];
      
     
-    [self semaphoreSync];
+//    [self semaphoreSync];
 
+    [self initTicketStatusSave];
+    
+    
 }
+
+ 
+/**
+ * 线程安全：使用 semaphore 加锁
+ * 初始化火车票数量、卖票窗口（线程安全）、并开始卖票
+ */
+- (void)initTicketStatusSave {
+    NSLog(@"currentThread---%@",[NSThread currentThread]);  // 打印当前线程
+    NSLog(@"semaphore---begin");
+    
+    _semaphoreLocks = dispatch_semaphore_create(1);
+    
+    self.ticketSurplusCount = 50;
+    
+    // queue1 代表北京火车票售卖窗口
+    dispatch_queue_t queue1 = dispatch_queue_create("net.xmt.test1", DISPATCH_QUEUE_SERIAL);
+    // queue2 代表上海火车票售卖窗口
+    dispatch_queue_t queue2 = dispatch_queue_create("net.xmt.test2", DISPATCH_QUEUE_SERIAL);
+    
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(queue1, ^{
+        [weakSelf saleTicketSafe];
+    });
+    
+    dispatch_async(queue2, ^{
+        [weakSelf saleTicketSafe];
+    });
+}
+
+/**
+ * 售卖火车票（线程安全）
+ */
+- (void)saleTicketSafe {
+    while (1) {
+        // 相当于加锁
+        dispatch_semaphore_wait(_semaphoreLocks, DISPATCH_TIME_FOREVER);
+        
+        if (self.ticketSurplusCount > 0) {  // 如果还有票，继续售卖
+            self.ticketSurplusCount--;
+            NSLog(@"%@", [NSString stringWithFormat:@"剩余票数：%ld 窗口：%@", (long)self.ticketSurplusCount, [NSThread currentThread]]);
+            [NSThread sleepForTimeInterval:0.2];
+        } else { // 如果已卖完，关闭售票窗口
+            NSLog(@"所有火车票均已售完");
+            
+            // 相当于解锁
+            dispatch_semaphore_signal(_semaphoreLocks);
+            break;
+        }
+        
+        // 相当于解锁
+        dispatch_semaphore_signal(_semaphoreLocks);
+    }
+}
+
+
+//self.tickets = 20;
+//NSThread *t1 = [[NSThread alloc]initWithTarget:self selector:@selector(saleTickets) object:nil];
+//t1.name = @"售票员A";
+//[t1 start];
+//
+//NSThread *t2 = [[NSThread alloc]initWithTarget:self selector:@selector(saleTickets) object:nil];
+//t2.name = @"售票员B";
+//[t2 start];
+
+////@synchronized
+//- (void)saleTickets{
+//    while (YES) {
+//        [NSThread sleepForTimeInterval:1.0];
+//        //互斥锁 -- 保证锁内的代码在同一时间内只有一个线程在执行
+//        @synchronized (self){
+//            //1.判断是否有票
+//            if (self.tickets > 0) {
+//                //2.如果有就卖一张
+//                self.tickets --;
+//                NSLog(@"还剩%ld张票  %@",(long)self.tickets,[NSThread currentThread]);
+//            }else{
+//                //3.没有票了提示
+//                NSLog(@"卖完了 %@",[NSThread currentThread]);
+//                break;
+//            }
+//        }
+//    }
+//
+//}
+
+
+
 
 /**
  * semaphore 线程同步
